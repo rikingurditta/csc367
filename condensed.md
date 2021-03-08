@@ -372,10 +372,84 @@ int main() {
   - `void omp_set_num_threads(n)`
   - `int omp_get_max_threads()`
   - `int omp_get_thread_num()`
-  - `int omp_get_num_procs()` (number of processors)
-  - `int omp_in_parallel()` (0 if outside a parallel region, nonzero otherwise)
+  - `int omp_get_num_procs()`
+    - number of processors
+  - `int omp_in_parallel()`
+    - 0 if outside a parallel region, nonzero otherwise
+  - `double omp_get_wtime()`
+    - clock time in seconds for current thread
 
-easy OpenMP example:
+- preprocessor directives come after `#pragma omp`
+
+- options for `#pragma omp parallel`:
+
+  - `parallel if(condition)`
+    - only parallelizes code if `condition` is true
+  - `parallel num_threads(n)`
+    - parallelizes with `n` threads instead of `OMP_NUM_THREADS`
+  - `parallel private(variable)`
+    - gives each thread an uninitialized private copy of `variable`
+  - `parallel firstprivate(variable)`
+    - gives each thread a private copy of `variable` that still has the current value
+  - `parallel shared(variable)`
+    - allows all threads to share `variable`
+  - `parallel default(setting)`
+    - `setting` can be `none`, `private`, `shared`
+      - if `none`, must explicitly decide sharing for each variable in parallel region
+      - best to use `none` for that reason
+  - `reduction(op:variable)`
+    - `op` must be one of `+`, `*`, `-`, `&`, `|`, `^`, `&&`, `||`
+    - e.g. `#pragma omp reduction(+:s)`
+    - each thread keeps a local copy of `variable`, which is reduced to one variable using `op` at the end
+  - `for`
+    - automatically splits iterations of `for` loop among threads
+    - since threads will run independently, should not use this when order matters
+      - i.e. should not use for a `for` loop where each iteration depends on work done in previous iterations
+    - must have a normal for loop
+      - iterator is integer
+      - starts at integer
+      - use `<`, `>`, `<=`, or `>=` in condition
+      - must increment by an integer
+
+- scheduling
+
+  - decide how iterations are mapped to threads with `schedule(class[, param])` in `for` directive
+    - `static`: each thread does a constant number of iterations
+    - `dynamic`: queue of iterations, thread takes from queue whenever it is ready
+    - `guided`: assign large chunks of iterations to threads at beginning, but assign smaller ones as computation progresses
+      - This way, not much communication at beginning, and not much load imbalance at end
+    - `runtime`: delay scheduling decision until runtime, use `OMP_SCHEDULE` environment variable
+  
+- barriers
+
+  - `omp for` directives implicitly have a barrier after the for loop
+    - we can remove this barrier using the `nowait` option
+  - can add explicit barrier in parallel region with `#pragma omp barrier`
+
+- sections and tasks
+
+  - can use `#pragma omp section` to define a section of code
+  - has an implicit barrier at the end, so each thread finishes section, then all threads move on
+  - can use `#pragma omp task` to define sections without implicit barrier
+
+- single and master
+
+  - sometimes want only one thread to execute some code
+  - `#pragma omp single` block if any thread can execute it
+    - implicit barrier after
+  - `#pragma omp master` block if only master thread should execute it
+    - no implicit barrier after
+
+- critical sections and atomic
+
+  - use `#pragma omp critical` to mark that some code should only be executed by one thread at a time
+  - use `#pragma omp atomic` to do the same when setting a variable
+    - has hardware support
+    - e.g. `data += 5;` can be atomic
+
+- OpenMP has explicit locks but who cares
+
+Simple OpenMP example:
 
 ```c
 #include <omp.h>
@@ -388,12 +462,19 @@ int main() {
         y_or_n = "no";
     printf("am i in a parallel region yet? %d", y_or_n);
     
-    #pragma omp parallel
+    int n = omp_get_num_threads();
+    int s = 0;
+    #pragma omp parallel reduction(+:s) firstprivate(n)
     {
         int id = omp_get_thread_num();
-        int n = omp_get_num_threads();
         printf("thread %d of %d", id, n);
+        s += id;
     }
+    printf("sum of numbers from 0 to %d is %d", n - 1, s);
+    
+    #pragma omp parallel for
+    for (int i = 0; i < 10; i++)
+        do_work(i);
 }
 ```
 
