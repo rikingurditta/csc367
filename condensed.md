@@ -2,6 +2,15 @@
 
 ## Single processor machines
 
+### Pipelining
+
+- each CPU instruction has parts that are done by different units in the CPU
+  - e.g. using the APU, writing the data, etc
+- **pipelining** allows multiple instructions to overlap by letting one instruction execute on one part of the CPU while another instruction executes on another part
+  ![laundry pipelining.png](laundry pipelining.png)
+- improves performance by increasing CPU bandwidth
+  - CPU bandwidth is bottlenecked by the slowest pipeline stage, so must design a balanced pipeline with low latency in every stage
+
 ### Compiler optimization
 
 compiler performs many optimizations
