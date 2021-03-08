@@ -151,9 +151,9 @@ A model consists of a decomposition method, a task mapping method, and strategie
       - too high granularity makes manager a bottleneck
       - manager generating tasks overlaps with workers doing computations
 
-### Measuring performance
+## Measuring performance
 
-- common sources:
+- common sources of overhead:
   - communication
   - idling
   - excess computation (sometimes added to reduce communication)
@@ -162,3 +162,238 @@ A model consists of a decomposition method, a task mapping method, and strategie
   - $T_p$ is time that $p$ processors take
 - linear speedup is when $S \sim p$
 - superlinear speedup only happens when sequential algorithm is at a disadvantage
+
+#### Amdahl's law
+
+- let $T$ and $T'$ be the running time of a program before and after enhancement
+
+- $T = T_1 + T_2$
+  - $T_1$ is time taken by part of program that is necessarily sequential
+    - can't be enhanced by parallelization
+  - $T_2$ is time taken by part of program that can be parallelized
+    - can be enhanced
+  
+- $T' = T_1 + T_2'$
+
+  - enhanced program has $T_2' \leq T_2$, but cannot improve $T_1$
+  - perfect speedup means dividing $T_2$ work among $p$ processors equally and without overhead, i.e. $T_2' = T_2 / p$
+  - as a result, considering the real $T_2'$, we have $T_2' \geq T_2 / p$
+
+As a result, if $T = 1$ then speedup is
+$$
+S = \frac{T}{T'} = \frac{1}{T_1 + T_2'} \leq \frac{1}{T_1 + T_2/p} \leq \frac{1}{T_1}
+$$
+
+(this holds if $T \neq 1$ but $T_1$ is the *percentage* of time spent on the necessarily sequential part)
+
+### Efficiency
+
+**efficiency** is $E = S/p$, the fraction of time when processes are doing useful work
+
+- $E \in [0, 1]$
+
+### Bad ways to report improvements from parallelization
+
+the following are bad and will cause misleading numbers when performing measurements:
+
+- use different architecture for serial/parallel
+- use a bad algorithm for serial instead of optimizing serial first
+- use a bad implementation for the serial code
+- report speedup but not running times
+
+## Shared memory architectures
+
+- a **programming model** is made of languages and libraries that create abstractions on the machine hardware
+  - e.g. threads
+- programming model allows us to work with:
+  - control over parallelization
+    - threads
+    - ordering
+    - tasks
+  - data
+    - which data is private/shared
+    - how data is communicated
+  - synchronization
+    - which operations can be used for synchronization
+    - which operations are atomic
+
+### Shared memory programs
+
+- program consists of threads (which can be created during execution)
+- each thread has private (local) variables, all threads share some variables
+  - reading/writing shared variables is *communication*
+
+### Pthreads
+
+- pthreads supports:
+  - creating parallelism (spawning threads)
+  - synchronization
+  - shared memory
+- since there is shared memory, there is no need for explicit communication constructs
+
+Pthreads example:
+
+```c
+#include <stdio.h>
+#include <pthread.h>
+
+// thread function:
+void *funnyguy(void *arg) {
+    char *s = (char *)arg;
+    printf("%s funny guy\n", s);
+    return NULL; // necessary
+}
+
+int main() {
+    // to spawn a thread:
+    pthread_t thread;
+    char *ala = "ala";
+    // second arg is usually just NULL
+    int errcode = pthread_create(&thread, NULL, funnyguy, ala);
+    // waits for thread to be done
+    pthread_join(thread, NULL);
+}
+```
+
+### Synchronization
+
+- a **race condition** is when the outcome of the program depends on the order in which threads happen to access a variable (i.e., not in a controlled way)
+  - can happen when processes share variables without synchronization
+- synchronization can prevent race conditions because it can make sure that only one thread accesses a variable at a time
+- **critical section** is the part of code that accesses shared resources
+  - part of code that needs to be synchronized so that multiple threads are not in it at once
+- want to ensure that:
+  - only one thread in critical section at a time
+  - other threads have to wait for critical section
+  - when one thread leaves, another thread can enter
+
+#### Mutexes/locks
+
+- **mutex** = **mut**ual **ex**clusion
+- threads try to acquire lock, wait if it is busy, enter critical section when not busy, then release when exiting critical section
+- **deadlock** is mutual blocking of threads/processes
+  - happens when different threads try to acquire lock, but neither can advance unless the other does, so they are stuck waiting
+  - can happen with bad lock order, multiple locks in bad order, etc
+- locks are slow
+  - waiting to acquire takes time
+  - overhead
+- should use synchronization sparingly
+
+Pthreads mutex example:
+
+```c
+#include <stdio.h>
+#include <pthread.h>
+
+pthread_mutex_t lock;
+
+void *lockfunc() {
+    pthread_mutex_lock(&lock);
+    printf("congratu");
+    printf("lations!\n");
+    pthread_mutex_unlock(&lock);
+    return NULL;
+}
+
+int main() {
+	pthread_mutex_init(&lock, NULL);
+    pthread_t threads[5];
+    for (int i = 0; i < 5; i++) {
+        pthread_create(&threads[i], NULL, lockfunc, NULL);
+    }
+    for (int i = 0; i < 5; i++) {
+        pthread_join(threads[i], NULL);
+    }
+}
+```
+
+#### Barriers
+
+- construct for threads
+- once a thread reaches a barrier, it waits until the rest of the threads have reached the barrier, then they all continue
+
+Pthreads barrier example: (doesn't run on MacOS)
+
+```c
+#include <stdio.h>
+#include <pthread.h>
+
+pthread_barrier_t barrier;
+
+// thread function:
+void *sad() {
+    // every thread is excited to go to uoft
+    printf("i am so excited to go to uoft\n");
+    // then they get there
+    pthread_barrier_wait(&barrier);
+    // now they are sad
+    printf("i am so sad\n");
+    return NULL; // necessary
+}
+
+int main() {
+    int num_threads = 5;
+    pthread_barrier_init(&barrier, NULL, num_threads);
+    pthread_t threads[num_threads];
+    for (int i = 0; i < num_threads; i++) {
+        pthread_create(&threads[i], NULL, sad, NULL);
+    }
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    pthread_barrier_destroy(*barrier);
+}
+```
+
+## OpenMP
+
+- pthreads is hard to program with
+
+- OpenMP is meant to simplify parallel programming for common usage
+
+- uses mostly preprocessor directives (start with `#pragma`)
+
+- allows programmer to separate program into serial and parallel regions rather than explicitly programming threads
+
+- follows fork-and-join execution model
+
+  ![fork and join.png](fork and join.png)
+
+- need to compile with `-fopenmp` flag
+
+- number of threads is generally decided by `OMP_NUM_THREADS` environment variable
+
+  - default value is max number of threads supported by computer
+  - can also be set with library functions
+
+- library functions:
+
+  - `int omp_get_num_threads()`
+  - `void omp_set_num_threads(n)`
+  - `int omp_get_max_threads()`
+  - `int omp_get_thread_num()`
+  - `int omp_get_num_procs()` (number of processors)
+  - `int omp_in_parallel()` (0 if outside a parallel region, nonzero otherwise)
+
+easy OpenMP example:
+
+```c
+#include <omp.h>
+
+int main() {
+    char *y_or_n;
+    if (omp_in_parallel())
+        y_or_n = "yes";
+    else
+        y_or_n = "no";
+    printf("am i in a parallel region yet? %d", y_or_n);
+    
+    #pragma omp parallel
+    {
+        int id = omp_get_thread_num();
+        int n = omp_get_num_threads();
+        printf("thread %d of %d", id, n);
+    }
+}
+```
+
