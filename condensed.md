@@ -460,7 +460,7 @@ int main() {
         y_or_n = "yes";
     else
         y_or_n = "no";
-    printf("am i in a parallel region yet? %d", y_or_n);
+    printf("am i in a parallel region yet? %d\n", y_or_n);
     
     int n = omp_get_num_threads();
     int s = 0;
@@ -470,11 +470,83 @@ int main() {
         printf("thread %d of %d", id, n);
         s += id;
     }
-    printf("sum of numbers from 0 to %d is %d", n - 1, s);
+    printf("sum of numbers from 0 to %d is %d\n", n - 1, s);
     
     #pragma omp parallel for
     for (int i = 0; i < 10; i++)
         do_work(i);
 }
+```
+
+## Distributed memory architectures
+
+- do not share memory so must pass messages/data between each other
+
+- **latency** is the delay between send and receive times
+
+- can think of a distributed system as a network of nodes
+
+- the **topology** is how the network is connected
+
+- the **diameter** of a network is the greatest distance between two nodes
+  
+  - i.e., if $\ell(u, v)$ is the length of the shortest path between nodes $u$ and $v$, then the diameter is
+  
+    $$
+    \max_{u, v} \ell(u, v)
+    $$
+    
+  
+- the **bisection bandwidth** of a network is the bandwidth across the smallest cut that divides a network into two equal halves
+  ![bisection cut example nonexample.png](bisection cut example nonexample.png)
+
+### Single program multiple data
+
+- have a process on each node running the same program but with different data
+- each process has separate memory
+  - separate computation resources in general
+  - processes cannot access each other's work unless they send/receive messages
+- underlying architecture could be distributed memory or shared memory
+  - can simulate message passing on a shared memory system by copying/mapping data between processes
+- idea is to make communication extremely rare
+
+### Programming for distributed memory
+
+- primitives to `send` and `receive` data
+  - these can be blocking or non-blocking
+  - message passing platforms usually have hardware support
+- **blocking**: only return from an operation once it's safe
+- can have buffered or non-buffered blocking `send`/`receive`
+  - if non-buffered, then `send` does not return until matching `receive` happens
+    - non-buffered will deadlock if sends/receives are not in same order
+  - if buffered, `send` copies message into buffer then returns
+    - doesn't wait for matching `recieve`
+    - deadlock still possible because `receive` waits
+    - can have problems if too much data for buffer
+  - for both, need to avoid deadlock by sending/receiving in same order
+- non-blocking is also viable
+  - sender sends RTS = request to send
+  - receiver responds with OTS = okay to send
+  - after this exchange is done, sender can confidently send message
+
+### MPI
+
+basic functions:
+
+```c
+MPI_Init;
+MPI_Finalize;
+MPI_Comm_size; // get number of processes
+MPI_Comm_rank; // get id of current process
+MPI_Send;  // blocking, buffered/non-buffered is implementation-specific
+MPI_Receive;  // blocking
+```
+
+also:
+
+```c
+MPI_Gather;
+MPI_Gatherall;
+MPI_Scatter;
 ```
 
